@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🚨 Interventionsrechner</title>
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Interventionsrechner">
+<meta name="theme-color" content="#111111">
+
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  height:100%;
+  background:#111;
+  color:#eee;
+  font-family:Arial, sans-serif;
+}
+
+body{
+  display:flex;
+  flex-direction:column;
+}
+
+.header{
+  background:#1a1a1a;
+  padding:6px 10px;
+  text-align:center;
+  font-weight:bold;
+  flex-shrink:0;
+}
+
+.section{ padding:10px; flex-shrink:0; }
+
+.form-row{
+  display:grid;
+  grid-template-columns:1fr 170px;
+  align-items:center;
+  margin-bottom:10px;
+}
+
+.field{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  gap:8px;
+}
+
+.box{
+  background:#222;
+  padding:6px 8px;
+  border-radius:6px;
+  width:70px;
+  text-align:center;
+}
+
+.set-btn{ width:55px; }
+.set-placeholder{ width:55px; }
+.wide-btn{ min-width:120px; }
+
+button{
+  background:#333;
+  color:#fff;
+  border:none;
+  padding:6px 10px;
+  border-radius:6px;
+}
+
+.divider{ border-bottom:1px solid #555; flex-shrink:0; }
+
+.result-top{
+  padding:8px 10px;
+  font-size:13px;
+  line-height:1.5em;
+  flex-shrink:0;
+}
+
+.status-green{color:limegreen;}
+.status-red{color:red;}
+.warning{color:red;}
+.endtime{color:yellow;}
+
+.table-container{
+  flex:1;
+  overflow-y:auto;
+  padding:10px;
+}
+
+.table-title{
+  margin-bottom:6px;
+  font-weight:bold;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  border:1px solid #aaa;
+}
+
+th,td{
+  border:1px solid #aaa;
+  padding:6px;
+  text-align:center;
+  font-size:13px;
+}
+
+footer{
+  display:flex;
+  justify-content:space-between;
+  padding:8px;
+  background:#1a1a1a;
+  flex-shrink:0;
+}
+
+.overlay{
+  position:fixed;
+  top:0;left:0;
+  width:100%;height:100%;
+  background:rgba(0,0,0,0.6);
+  display:none;
+  justify-content:center;
+  align-items:center;
+}
+
+.popup{
+  background:#222;
+  padding:20px;
+  border-radius:10px;
+  text-align:center;
+  min-width:260px;
+}
+
+.time-row{
+  display:flex;
+  justify-content:center;
+  gap:15px;
+  margin:15px 0;
+}
+
+.time-col{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+
+.time-input{
+  width:55px;
+  text-align:center;
+  font-size:20px;
+  background:#111;
+  color:#fff;
+  border:1px solid #444;
+  border-radius:5px;
+}
+
+.arrow{
+  font-size:18px;
+  padding:4px 8px;
+}
+
+.popup-note{
+  color:yellow;
+  height:22px;
+  margin-top:8px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">🚨 Interventionsrechner 🚨</div>
+
+<div class="section">
+
+<div class="form-row">
+<div>Alarmierung</div>
+<div class="field">
+<span class="box" onclick="openTimePopup('alarm')" id="alarmBox"></span>
+<button class="set-btn" onclick="setNow('alarm')">SET</button>
+</div></div>
+
+<div class="form-row">
+<div>Interventionszeit</div>
+<div class="field">
+<span class="box" onclick="openIntPopup()" id="intBox"></span>
+<div class="set-placeholder"></div>
+</div></div>
+
+<div class="form-row">
+<div>Ankunft</div>
+<div class="field">
+<span class="box" onclick="openTimePopup('arrival')" id="arrivalBox">--:--</span>
+<button class="set-btn" onclick="setNow('arrival')">SET</button>
+</div></div>
+
+<div class="form-row">
+<div>Abfahrt</div>
+<div class="field">
+<span class="box" onclick="openTimePopup('departure')" id="departureBox">--:--</span>
+<button class="set-btn" onclick="setNow('departure')">SET</button>
+</div></div>
+
+</div>
+
+<div class="divider"></div>
+<div class="result-top" id="upperResult"></div>
+<div class="divider"></div>
+
+<div class="table-container">
+<div class="table-title">Abfahrts Zeitfenster</div>
+<table>
+<thead><tr><th>Einheit</th><th>Abfahrt</th></tr></thead>
+<tbody id="tableBody"></tbody>
+</table>
+</div>
+
+<footer>
+<button class="wide-btn" onclick="resetAll()">Neuer Alarm</button>
+<button class="wide-btn" onclick="exitApp()">Exit</button>
+</footer>
+
+<div class="overlay" id="overlay">
+<div class="popup" id="popupContent"></div>
+</div>
+
+<script>
+let alarm=new Date();
+let intervention=20;
+let arrival=null;
+let departure=null;
+
+function saveState(){
+localStorage.setItem("interventionsrechner",JSON.stringify({
+alarm:alarm.toISOString(),
+intervention,
+arrival:arrival?arrival.toISOString():null,
+departure:departure?departure.toISOString():null
+}));
+}
+
+function loadState(){
+let data=localStorage.getItem("interventionsrechner");
+if(!data)return;
+let p=JSON.parse(data);
+alarm=new Date(p.alarm);
+intervention=p.intervention;
+arrival=p.arrival?new Date(p.arrival):null;
+departure=p.departure?new Date(p.departure):null;
+}
+
+function formatTime(d){return d.toTimeString().slice(0,5);}
+function addMinutes(d,m){return new Date(d.getTime()+m*60000);}
+function minutesSinceAlarm(t){let a=new Date(t);if(a<alarm)a.setDate(a.getDate()+1);return Math.floor((a-alarm)/60000);}
+function minuteText(v){return v===1?"Minute":"Minuten";}
+function twoDigit(v){return v<10?"0"+v:v.toString();}
+
+/* ===== TIME POPUPS ===== */
+
+function openTimePopup(type){
+let base=type==='alarm'?alarm:(type==='arrival'?arrival:departure);
+if(!base)base=new Date();
+let h=base.getHours(),m=base.getMinutes();
+
+popupContent.innerHTML=`
+<div>Uhrzeit einstellen</div>
+<div class="time-row">
+<div class="time-col">
+<button class="arrow" onclick="changeHour(1)">▲</button>
+<input class="time-input" id="hourInput" value="${twoDigit(h)}">
+<button class="arrow" onclick="changeHour(-1)">▼</button>
+</div>
+<div class="time-col">
+<button class="arrow" onclick="changeMinute(1)">▲</button>
+<input class="time-input" id="minuteInput" value="${twoDigit(m)}">
+<button class="arrow" onclick="changeMinute(-1)">▼</button>
+</div></div>
+<button class="wide-btn" onclick="saveTime('${type}')">Übernehmen</button>`;
+
+overlay.style.display="flex";
+}
+
+function changeHour(s){
+let v=(parseInt(hourInput.value)+s+24)%24;
+hourInput.value=twoDigit(v);
+}
+
+function changeMinute(s){
+let v=(parseInt(minuteInput.value)+s+60)%60;
+minuteInput.value=twoDigit(v);
+}
+
+function saveTime(type){
+let h=parseInt(hourInput.value);
+let m=parseInt(minuteInput.value);
+let d=new Date(alarm);
+d.setHours(h); d.setMinutes(m);
+if(type==='alarm')alarm=d;
+if(type==='arrival')arrival=d;
+if(type==='departure')departure=d;
+overlay.style.display="none";
+render();
+}
+
+/* ===== INTERVENTION POPUP ===== */
+
+function openIntPopup(){
+let note=getLocationNote(intervention)||"&nbsp;";
+popupContent.innerHTML=`
+<div>Interventionszeit</div>
+<div class="time-col">
+<button class="arrow" onclick="changeInt(5)">▲</button>
+<input class="time-input" id="intInput" value="${intervention}">
+<button class="arrow" onclick="changeInt(-5)">▼</button>
+</div>
+<div class="popup-note">${note}</div>
+<button class="wide-btn" onclick="saveInt()">Übernehmen</button>`;
+overlay.style.display="flex";
+}
+
+function changeInt(s){
+intervention=Math.min(120,Math.max(20,intervention+s));
+openIntPopup();
+}
+
+function saveInt(){
+intervention=parseInt(intInput.value)||20;
+overlay.style.display="none";
+render();
+}
+
+function getLocationNote(v){
+switch(v){
+case 20:return "Innenstadt Kaiserslautern";
+case 30:return "Gewerbegebiet, IG-Nord & außerhalb";
+case 40:return "Kibo, Kusel & Göllheim";
+case 50:return "Maßweiler";
+case 60:return "Pirmasens";
+default:return "";
+}}
+
+function setNow(type){
+if(type==='alarm')alarm=new Date();
+if(type==='arrival')arrival=new Date();
+if(type==='departure')departure=new Date();
+render();
+}
+
+function resetAll(){
+alarm=new Date();
+intervention=20;
+arrival=null;
+departure=null;
+render();
+}
+
+function exitApp(){alert("App einfach schließen oder wechseln.");}
+
+/* ===== RENDER ===== */
+
+function render(){
+saveState();
+
+alarmBox.innerText=formatTime(alarm);
+intBox.innerText=intervention+" Min";
+arrivalBox.innerText=arrival?formatTime(arrival):"--:--";
+departureBox.innerText=departure?formatTime(departure):"--:--";
+
+let überschreitung=0;
+if(arrival){
+let diff=minutesSinceAlarm(arrival);
+if(diff>intervention)überschreitung=diff-intervention;
+}
+
+let referenz=arrival||alarm;
+let table="";let fenster=[];
+
+for(let n=1;n<=45;n++){
+let startMin=((n-1)*30+5-intervention+überschreitung);
+let nextStart=startMin+30;
+let endMin=startMin+29;
+fenster.push({nummer:n,start:startMin,next:nextStart});
+let von=addMinutes(alarm,startMin);
+let bis=addMinutes(alarm,endMin);
+let vonRot=von<referenz;
+let bisRot=bis<referenz;
+table+=`<tr><td>${n}</td><td>
+<span style="${vonRot?'color:red;':''}">${formatTime(von)}</span> -
+<span style="${(vonRot&&bisRot)?'color:red;':''}">${formatTime(bis)}</span>
+</td></tr>`;
+}
+tableBody.innerHTML=table;
+
+let upper="";
+if(!arrival){
+upper="Ankunft erwartet bis "+formatTime(addMinutes(alarm,intervention));
+}else{
+let diff=minutesSinceAlarm(arrival);
+if(diff<=intervention){
+upper+=`<span class="status-green">Ankunft innerhalb der Interventionszeit 👍</span><br>`;
+}else{
+upper+=`<span class="status-red">Interventionszeit überschritten um ${überschreitung} Minuten 👎</span><br>`;
+}
+if(departure){
+let departureMin=minutesSinceAlarm(departure);
+let endzeit=addMinutes(departure,intervention);
+let gesamtMin=minutesSinceAlarm(endzeit)-überschreitung;
+let endEinheit=1;let nextStartTime=null;
+for(let f of fenster){
+if(departureMin>=f.start&&departureMin<f.next){
+endEinheit=f.nummer;nextStartTime=f.next;break;}}
+upper+=`<span class="endtime">Endzeit: ${formatTime(endzeit)} Uhr - Gesamtzeit: ${gesamtMin} Min - Einheiten: ${endEinheit}</span>`;
+let rest=nextStartTime-departureMin;
+if(rest<=15){
+upper+=`<br><span class="warning">Sind Sie sicher? – nächste Einheit in ${rest} ${minuteText(rest)}!</span>`;
+}}}
+upperResult.innerHTML=upper;
+}
+
+loadState();
+render();
+</script>
+
+</body>
+</html>
